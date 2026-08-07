@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/raw/
+data/processed/
+*.db
+*.sqlite
+*.sqlite3
+.ipynb_checkpoints/
+.pytest_cache/
+
+CLAUDE.md
+.claude/

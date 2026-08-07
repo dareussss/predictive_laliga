@@ -1,0 +1,21 @@
+# --- Core data ---
+pandas>=2.2
+numpy>=1.26
+scipy>=1.13
+
+# --- Storage ---
+SQLAlchemy>=2.0
+python-dotenv>=1.0
+# psycopg[binary]>=3.1   # decomenteaza cand migram pe Postgres/Supabase
+
+# --- Ingestion ---
+requests>=2.32
+
+# --- Modeling (fazele urmatoare) ---
+scikit-learn>=1.5
+statsmodels>=0.14
+
+# --- Viz / notebooks ---
+matplotlib>=3.9
+seaborn>=0.13
+jupyterlab>=4.2
