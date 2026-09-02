@@ -1,0 +1,16 @@
+# Tema e fixata explicit ca suprafata aplicatiei sa fie aceeasi cu cea pentru care
+# au fost validate culorile graficelor.
+
+[theme]
+base = "light"
+primaryColor = "#2a78d6"
+backgroundColor = "#f9f9f7"
+secondaryBackgroundColor = "#fcfcfb"
+textColor = "#0b0b0b"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
