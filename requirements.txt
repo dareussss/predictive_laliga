@@ -10,10 +10,15 @@ python-dotenv>=1.0
 
 # --- Ingestion ---
 requests>=2.32
+pyreadr>=0.5          # citeste fisierele .rds cu statistici FBref
 
 # --- Modeling (fazele urmatoare) ---
 scikit-learn>=1.5
 statsmodels>=0.14
+
+# --- Dashboard ---
+streamlit>=1.38
+plotly>=5.24
 
 # --- Viz / notebooks ---
 matplotlib>=3.9

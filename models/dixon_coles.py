@@ -15,7 +15,7 @@ import pandas as pd
 from scipy.optimize import minimize
 from scipy.special import gammaln
 
-DEFAULT_XI = 0.0018
+DEFAULT_XI = 0.001
 DEFAULT_MAX_GOALS = 10
 TAU_FLOOR = 1e-10
 
@@ -78,12 +78,15 @@ def _poisson_logpmf(goals: np.ndarray, log_rate: np.ndarray) -> np.ndarray:
 class DixonColes:
     """Model de forta atac/aparare cu avantajul terenului si ponderare temporala.
 
-    xi controleaza cat de repede se uita meciurile vechi. 0.0018/zi inseamna ca un
-    meci de acum un an cantareste aproximativ jumatate cat unul de ieri.
+    xi este rata de uitare pe zi; history_years taie istoricul prea vechi pentru a mai
+    conta. Apelurile repetate de fit pe aceeasi instanta pornesc din parametrii
+    precedenti, ceea ce accelereaza reantrenarile din backtesting.
     """
 
     xi: float = DEFAULT_XI
     max_goals: int = DEFAULT_MAX_GOALS
+    history_years: float | None = None
+    use_rho: bool = True
 
     teams: list[str] = field(default_factory=list, init=False)
     attack: dict[str, float] = field(default_factory=dict, init=False)
@@ -93,13 +96,13 @@ class DixonColes:
     log_likelihood: float = field(default=0.0, init=False)
     n_matches: int = field(default=0, init=False)
     effective_n: float = field(default=0.0, init=False)
+    team_weight: dict[str, float] = field(default_factory=dict, init=False)
     converged: bool = field(default=False, init=False)
 
     def fit(self, matches: pd.DataFrame, as_of: datetime | None = None) -> "DixonColes":
         """Estimeaza parametrii prin maxima verosimilitate ponderata temporal.
 
-        Doar meciurile jucate strict inainte de `as_of` sunt folosite, ceea ce face
-        imposibila scurgerea de informatie din viitor in backtesting.
+        Foloseste doar meciuri jucate strict inainte de `as_of`.
         """
         history = matches if as_of is None else matches[matches["date"] < as_of]
         history = history.dropna(subset=["home_goals", "away_goals"])
@@ -107,6 +110,12 @@ class DixonColes:
             raise ValueError("Niciun meci disponibil pentru fit.")
 
         reference = as_of if as_of is not None else history["date"].max()
+
+        if self.history_years is not None:
+            cutoff = reference - pd.Timedelta(days=365.25 * self.history_years)
+            history = history[history["date"] >= cutoff]
+            if history.empty:
+                raise ValueError("Niciun meci in fereastra de istoric ceruta.")
         age_days = (reference - history["date"]).dt.days.to_numpy(dtype=float)
         weights = np.exp(-self.xi * age_days)
 
@@ -135,8 +144,19 @@ class DixonColes:
 
             return -float(np.sum(weights * (log_prob + correction)))
 
-        start = np.concatenate([np.zeros(n_teams), np.zeros(n_teams), [0.25], [-0.05]])
-        bounds = [(-3.0, 3.0)] * (2 * n_teams) + [(-1.0, 1.0), (-0.2, 0.2)]
+        if self.attack:
+            start = np.concatenate(
+                [
+                    [self.attack.get(team, 0.0) for team in self.teams],
+                    [self.defence.get(team, 0.0) for team in self.teams],
+                    [self.home_advantage, self.rho],
+                ]
+            )
+        else:
+            start = np.concatenate([np.zeros(2 * n_teams), [0.25, -0.02 if self.use_rho else 0.0]])
+
+        rho_bounds = (-0.2, 0.2) if self.use_rho else (0.0, 0.0)
+        bounds = [(-3.0, 3.0)] * (2 * n_teams) + [(-1.0, 1.0), rho_bounds]
 
         result = minimize(negative_log_likelihood, start, method="L-BFGS-B", bounds=bounds)
 
@@ -150,9 +170,31 @@ class DixonColes:
         self.log_likelihood = -float(result.fun)
         self.n_matches = len(history)
         self.effective_n = float(weights.sum())
+        self.team_weight = dict(
+            zip(
+                self.teams,
+                np.bincount(home_idx, weights=weights, minlength=n_teams)
+                + np.bincount(away_idx, weights=weights, minlength=n_teams),
+            )
+        )
         self.converged = bool(result.success)
 
         return self
+
+    def register_team(self, team: str, attack: float, defence: float) -> None:
+        """Adauga manual o echipa fara istoric utilizabil, cu ratinguri date.
+
+        Folosit pentru promovate, carora li se atribuie prior-ul masurat.
+        """
+        self.attack[team] = attack
+        self.defence[team] = defence
+        if team not in self.teams:
+            self.teams.append(team)
+            self.teams.sort()
+
+    def known(self, team: str) -> bool:
+        """Are modelul un rating pentru echipa asta?"""
+        return team in self.attack
 
     def expected_goals(self, home_team: str, away_team: str) -> tuple[float, float]:
         """Numarul mediu de goluri asteptat de la fiecare echipa."""
